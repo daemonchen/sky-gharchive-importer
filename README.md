@@ -2,12 +2,14 @@
 
 ## Overview
 
-This importer is for pulling public GitHub events into the Sky database via the GitHub Archive.
+This importer is for pulling public [GitHub events](http://developer.github.com/v3/activity/events/) into the Sky database via the [GitHub Archive](http://www.githubarchive.org/).
+These events consist of commits, pushes, repository creation and more.
+You can find a full list in the [GitHub Event Type](http://developer.github.com/v3/activity/events/types/) documentation.
 Archives are built every hour so you can specify a time range to load.
 
 ## Installation
 
-To build the binary for the importer, first make sure you have Go installed and then run:
+To build the binary for the importer, first make sure you have [Go](http://golang.org/) installed and then run:
 
 ```sh
 $ go build
