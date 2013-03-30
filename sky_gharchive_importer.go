@@ -57,8 +57,8 @@ var overwrite bool
 //--------------------------------------
 
 func init() {
-	flag.StringVar(&host, "data-dir", defaultHost, hostUsage)
-	flag.StringVar(&host, "d", defaultHost, hostUsage+" (shorthand)")
+	flag.StringVar(&host, "host", defaultHost, hostUsage)
+	flag.StringVar(&host, "h", defaultHost, hostUsage+" (shorthand)")
 	flag.IntVar(&port, "port", defaultPort, portUsage)
 	flag.IntVar(&port, "p", defaultPort, portUsage+" (shorthand)")
 	flag.StringVar(&tableName, "table", defaultTableName, tableNameUsage)
