@@ -34,9 +34,9 @@ By default the importer will append to the `gharchive` table on a Sky instance r
 You can also override this by specifying the following options:
 
 ```sh
--h, --host HOST    The hostname that Sky is running on.
--p, --port PORT    The port number Sky is running on.
--t, --table TABLE  The table name to insert into.
+-h, --host HOST    The hostname that Sky is running on (defaults to 'localhost').
+-p, --port PORT    The port number Sky is running on (defaults to 8585).
+-t, --table TABLE  The table name to insert into (defaults to 'gharchive').
 --overwrite        Deletes the table if it already exists.
 ```
 
