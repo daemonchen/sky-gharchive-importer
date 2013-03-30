@@ -145,30 +145,31 @@ func setup() (*sky.Client, *sky.Table, error) {
 			if err != nil {
 				return nil, nil, err
 			}
-		} else {
-			return nil, nil, errors.New("Table already exists. Use --overwrite to overwrite it.")
+			table = nil
 		}
 	}
-
-	// Create the table.
-	table = sky.NewTable(tableName, client)
-	if err = client.CreateTable(table); err != nil {
-		return nil, nil, err
-	}
-
-	// Add properties.
-	properties := []*sky.Property{
-		sky.NewProperty("username", false, sky.String),
-		sky.NewProperty("action", true, sky.Factor),
-		sky.NewProperty("language", true, sky.Factor),
-		sky.NewProperty("forks", true, sky.Integer),
-		sky.NewProperty("watchers", true, sky.Integer),
-		sky.NewProperty("stargazers", true, sky.Integer),
-		sky.NewProperty("size", true, sky.Integer),
-	}
-	for _, property := range properties {
-		if err = table.CreateProperty(property); err != nil {
+	
+	if table == nil {
+		// Create the table.
+		table = sky.NewTable(tableName, client)
+		if err = client.CreateTable(table); err != nil {
 			return nil, nil, err
+		}
+
+		// Add properties.
+		properties := []*sky.Property{
+			sky.NewProperty("username", false, sky.String),
+			sky.NewProperty("action", true, sky.Factor),
+			sky.NewProperty("language", true, sky.Factor),
+			sky.NewProperty("forks", true, sky.Integer),
+			sky.NewProperty("watchers", true, sky.Integer),
+			sky.NewProperty("stargazers", true, sky.Integer),
+			sky.NewProperty("size", true, sky.Integer),
+		}
+		for _, property := range properties {
+			if err = table.CreateProperty(property); err != nil {
+				return nil, nil, err
+			}
 		}
 	}
 
