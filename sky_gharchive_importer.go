@@ -10,8 +10,8 @@ import (
 	"github.com/skydb/sky.go"
 	"io"
 	"net/http"
-	"runtime"
 	"os"
+	"runtime"
 	"time"
 )
 
@@ -26,6 +26,7 @@ const (
 	defaultPort      = 8585
 	defaultTableName = "gharchive"
 	defaultOverwrite = false
+	defaultVerbose   = false
 )
 
 const (
@@ -33,6 +34,7 @@ const (
 	portUsage      = "the port the Sky server is running on"
 	tableNameUsage = "the table to insert events into"
 	overwriteUsage = "overwrite an existing table if one exists"
+	verboseUsage   = "verbose logging"
 )
 
 //------------------------------------------------------------------------------
@@ -45,6 +47,7 @@ var host string
 var port int
 var tableName string
 var overwrite bool
+var verbose bool
 
 //------------------------------------------------------------------------------
 //
@@ -64,6 +67,8 @@ func init() {
 	flag.StringVar(&tableName, "table", defaultTableName, tableNameUsage)
 	flag.StringVar(&tableName, "t", defaultTableName, tableNameUsage+" (shorthand)")
 	flag.BoolVar(&overwrite, "overwrite", defaultOverwrite, overwriteUsage)
+	flag.BoolVar(&verbose, "v", defaultVerbose, verboseUsage)
+	flag.BoolVar(&verbose, "verbose", defaultVerbose, verboseUsage)
 }
 
 //--------------------------------------
@@ -72,7 +77,7 @@ func init() {
 
 func main() {
 	var err error
-	
+
 	// Parse the command line arguments.
 	flag.Parse()
 	runtime.GOMAXPROCS(runtime.NumCPU())
@@ -97,16 +102,16 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	
+
 	// Setup the client and table.
 	_, table, err := setup()
 	if err != nil {
 		warn("%v", err)
 		os.Exit(1)
 	}
-	
+
 	// Loop over date range.
-	hours := int(endDate.Sub(startDate) / time.Hour) + 1
+	hours := int(endDate.Sub(startDate)/time.Hour) + 1
 	for i := 0; i < hours; i++ {
 		date := startDate.Add(time.Duration(i) * time.Hour)
 		if err = importDate(table, date); err != nil {
@@ -127,7 +132,7 @@ func usage() {
 
 func setup() (*sky.Client, *sky.Table, error) {
 	warn("Connecting to %s:%d.\n", host, port)
-	
+
 	// Create a Sky client.
 	client := sky.NewClient(host)
 	client.Port = port
@@ -148,7 +153,7 @@ func setup() (*sky.Client, *sky.Table, error) {
 			table = nil
 		}
 	}
-	
+
 	if table == nil {
 		// Create the table.
 		table = sky.NewTable(tableName, client)
@@ -190,7 +195,7 @@ func importDate(table *sky.Table, date time.Time) error {
 		return err
 	}
 	defer resp.Body.Close()
-	
+
 	// Decompress response.
 	gzipReader, err := gzip.NewReader(resp.Body)
 	defer gzipReader.Close()
@@ -198,7 +203,7 @@ func importDate(table *sky.Table, date time.Time) error {
 	lineNumber := 0
 	for {
 		lineNumber += 1
-		
+
 		line, err := r.ReadBytes('\n')
 		if err == io.EOF {
 			break
@@ -211,13 +216,14 @@ func importDate(table *sky.Table, date time.Time) error {
 		if err = json.Unmarshal(line, &data); err != nil {
 			return err
 		}
-		
+
 		// Create an event.
 		if timestampString, ok := data["created_at"].(string); ok {
 			if timestamp, err := time.Parse(time.RFC3339, timestampString); err == nil {
 				if username, ok := data["actor"].(string); ok && len(username) > 0 {
 					event := sky.NewEvent(timestamp, map[string]interface{}{})
-				
+					event.Data["action"] = data["type"]
+
 					if repository, ok := data["repository"].(map[string]interface{}); ok {
 						event.Data["language"] = repository["language"]
 						event.Data["forks"] = repository["forks"]
@@ -225,19 +231,19 @@ func importDate(table *sky.Table, date time.Time) error {
 						event.Data["stargazers"] = repository["stargazers"]
 						event.Data["size"] = repository["size"]
 					}
-			
+
 					table.AddEvent(username, event, sky.Merge)
-				} else {
+				} else if verbose {
 					warn("[L%d] Actor required", lineNumber)
 				}
-			} else {
+			} else if verbose {
 				warn("[L%d] Invalid timestamp: %v (%v)", lineNumber, timestampString, err)
 			}
-		} else {
+		} else if verbose {
 			warn("[L%d] Timestamp required.", lineNumber)
 		}
 	}
-	
+
 	return nil
 }
 

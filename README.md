@@ -40,6 +40,7 @@ You can also override this by specifying the following options:
 -p, --port PORT    The port number Sky is running on (defaults to 8585).
 -t, --table TABLE  The table name to insert into (defaults to 'gharchive').
 --overwrite        Deletes the table if it already exists.
+-v,--verbose       Enables verbose logging.
 ```
 
 The GitHub Archive data is not necessarily sequential so you may find that Sky slows down considerably at some points because the database is optimized appends and not for random inserts
