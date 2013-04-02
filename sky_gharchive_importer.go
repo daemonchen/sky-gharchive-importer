@@ -22,6 +22,10 @@ import (
 //------------------------------------------------------------------------------
 
 const (
+	Version = "0.3.0"
+)
+
+const (
 	defaultHost      = "localhost"
 	defaultPort      = 8585
 	defaultTableName = "gharchive"
@@ -115,8 +119,7 @@ func main() {
 	for i := 0; i < hours; i++ {
 		date := startDate.Add(time.Duration(i) * time.Hour)
 		if err = importDate(table, date); err != nil {
-			warn("%v", err)
-			os.Exit(1)
+			warn("Invalid file: %v", err)
 		}
 	}
 }
@@ -208,13 +211,13 @@ func importDate(table *sky.Table, date time.Time) error {
 		if err == io.EOF {
 			break
 		} else if err != nil {
-			return err
+			warn("[L%d] %v", lineNumber, err)
 		}
 
 		// Parse data from the stream.
 		data := map[string]interface{}{}
 		if err = json.Unmarshal(line, &data); err != nil {
-			return err
+			warn("[L%d] %v", lineNumber, err)
 		}
 
 		// Create an event.
