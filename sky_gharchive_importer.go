@@ -203,47 +203,45 @@ func importDate(table *sky.Table, date time.Time) error {
 	gzipReader, err := gzip.NewReader(resp.Body)
 	defer gzipReader.Close()
 	r := bufio.NewReader(gzipReader)
+	decoder := json.NewDecoder(r)
 	lineNumber := 0
 	for {
 		lineNumber += 1
 
-		line, err := r.ReadBytes('\n')
-		if err == io.EOF {
+		// Parse data from the stream.
+		data := map[string]interface{}{}
+		if err = decoder.Decode(&data); err == io.EOF {
 			break
 		} else if err != nil {
 			warn("[L%d] %v", lineNumber, err)
-		}
+		} else {
+			// Create an event.
+			if timestampString, ok := data["created_at"].(string); ok {
+				if timestamp, err := time.Parse(time.RFC3339, timestampString); err == nil {
+					if username, ok := data["actor"].(string); ok && len(username) > 0 {
+						event := sky.NewEvent(timestamp, map[string]interface{}{})
+						event.Data["action"] = data["type"]
 
-		// Parse data from the stream.
-		data := map[string]interface{}{}
-		if err = json.Unmarshal(line, &data); err != nil {
-			warn("[L%d] %v", lineNumber, err)
-		}
+						if repository, ok := data["repository"].(map[string]interface{}); ok {
+							event.Data["language"] = repository["language"]
+							event.Data["forks"] = repository["forks"]
+							event.Data["watchers"] = repository["watchers"]
+							event.Data["stargazers"] = repository["stargazers"]
+							event.Data["size"] = repository["size"]
+						}
 
-		// Create an event.
-		if timestampString, ok := data["created_at"].(string); ok {
-			if timestamp, err := time.Parse(time.RFC3339, timestampString); err == nil {
-				if username, ok := data["actor"].(string); ok && len(username) > 0 {
-					event := sky.NewEvent(timestamp, map[string]interface{}{})
-					event.Data["action"] = data["type"]
-
-					if repository, ok := data["repository"].(map[string]interface{}); ok {
-						event.Data["language"] = repository["language"]
-						event.Data["forks"] = repository["forks"]
-						event.Data["watchers"] = repository["watchers"]
-						event.Data["stargazers"] = repository["stargazers"]
-						event.Data["size"] = repository["size"]
+						if err := table.AddEvent(username, event, sky.Merge); err != nil {
+							warn("[L%d] Unable to add event", lineNumber)
+						}
+					} else if verbose {
+						warn("[L%d] Actor required", lineNumber)
 					}
-
-					table.AddEvent(username, event, sky.Merge)
 				} else if verbose {
-					warn("[L%d] Actor required", lineNumber)
+					warn("[L%d] Invalid timestamp: %v (%v)", lineNumber, timestampString, err)
 				}
 			} else if verbose {
-				warn("[L%d] Invalid timestamp: %v (%v)", lineNumber, timestampString, err)
+				warn("[L%d] Timestamp required.", lineNumber)
 			}
-		} else if verbose {
-			warn("[L%d] Timestamp required.", lineNumber)
 		}
 	}
 
