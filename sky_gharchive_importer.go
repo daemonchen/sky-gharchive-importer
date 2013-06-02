@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"sort"
 	"time"
 )
 
@@ -48,10 +49,26 @@ const (
 //------------------------------------------------------------------------------
 
 var host string
-var port int
+var port uint
 var tableName string
 var overwrite bool
 var verbose bool
+
+
+//------------------------------------------------------------------------------
+//
+// Typedefs
+//
+//------------------------------------------------------------------------------
+
+// Temporary holder for event data.
+type UserEvent struct {
+	username string
+	event *sky.Event
+}
+
+type UserEventSlice []*UserEvent
+
 
 //------------------------------------------------------------------------------
 //
@@ -66,8 +83,8 @@ var verbose bool
 func init() {
 	flag.StringVar(&host, "host", defaultHost, hostUsage)
 	flag.StringVar(&host, "h", defaultHost, hostUsage+" (shorthand)")
-	flag.IntVar(&port, "port", defaultPort, portUsage)
-	flag.IntVar(&port, "p", defaultPort, portUsage+" (shorthand)")
+	flag.UintVar(&port, "port", defaultPort, portUsage)
+	flag.UintVar(&port, "p", defaultPort, portUsage+" (shorthand)")
 	flag.StringVar(&tableName, "table", defaultTableName, tableNameUsage)
 	flag.StringVar(&tableName, "t", defaultTableName, tableNameUsage+" (shorthand)")
 	flag.BoolVar(&overwrite, "overwrite", defaultOverwrite, overwriteUsage)
@@ -199,6 +216,8 @@ func importDate(table *sky.Table, date time.Time) error {
 	}
 	defer resp.Body.Close()
 
+	events := []*UserEvent{}
+
 	// Decompress response.
 	gzipReader, err := gzip.NewReader(resp.Body)
 	defer gzipReader.Close()
@@ -230,9 +249,7 @@ func importDate(table *sky.Table, date time.Time) error {
 							event.Data["size"] = repository["size"]
 						}
 
-						if err := table.AddEvent(username, event, sky.Merge); err != nil {
-							warn("[L%d] Unable to add event", lineNumber)
-						}
+						events = append(events, &UserEvent{username:username, event:event})
 					} else if verbose {
 						warn("[L%d] Actor required", lineNumber)
 					}
@@ -245,7 +262,34 @@ func importDate(table *sky.Table, date time.Time) error {
 		}
 	}
 
+	// Sort events by timestamp.
+	sort.Sort(UserEventSlice(events))
+	
+	// Insert events.
+	for index, ue := range events {
+		if err := table.AddEvent(ue.username, ue.event, sky.Merge); err != nil {
+			warn("[L%d] Unable to add event", index+1)
+		}
+	}
+
+	
 	return nil
+}
+
+//--------------------------------------
+// User Event Slice
+//--------------------------------------
+
+func (s UserEventSlice) Len() int {
+	return len(s)
+}
+
+func (s UserEventSlice) Less(i, j int) bool {
+	return s[i].event.Timestamp.Before(s[j].event.Timestamp)
+}
+
+func (s UserEventSlice) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
 }
 
 //--------------------------------------
@@ -256,3 +300,4 @@ func importDate(table *sky.Table, date time.Time) error {
 func warn(msg string, v ...interface{}) {
 	fmt.Fprintf(os.Stderr, msg+"\n", v...)
 }
+
