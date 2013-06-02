@@ -220,6 +220,9 @@ func importDate(table *sky.Table, date time.Time) error {
 
 	// Decompress response.
 	gzipReader, err := gzip.NewReader(resp.Body)
+	if err != nil {
+		return err
+	}
 	defer gzipReader.Close()
 	r := bufio.NewReader(gzipReader)
 	decoder := json.NewDecoder(r)
@@ -232,7 +235,7 @@ func importDate(table *sky.Table, date time.Time) error {
 		if err = decoder.Decode(&data); err == io.EOF {
 			break
 		} else if err != nil {
-			warn("[L%d] %v", lineNumber, err)
+			return fmt.Errorf("[L%d] %v", lineNumber, err)
 		} else {
 			// Create an event.
 			if timestampString, ok := data["created_at"].(string); ok {
@@ -266,11 +269,13 @@ func importDate(table *sky.Table, date time.Time) error {
 	sort.Sort(UserEventSlice(events))
 	
 	// Insert events.
-	for index, ue := range events {
-		if err := table.AddEvent(ue.username, ue.event, sky.Merge); err != nil {
-			warn("[L%d] Unable to add event", index+1)
+	table.Stream(func(stream *sky.EventStream) {
+		for index, ue := range events {
+			if err := stream.AddEvent(ue.username, ue.event); err != nil {
+				warn("[L%d] Unable to add event", index+1)
+			}
 		}
-	}
+	})
 
 	
 	return nil
