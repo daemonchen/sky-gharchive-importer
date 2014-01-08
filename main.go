@@ -16,37 +16,9 @@ import (
 	"time"
 )
 
-//------------------------------------------------------------------------------
-//
-// Constants
-//
-//------------------------------------------------------------------------------
-
 const (
 	Version = "0.3.0"
 )
-
-const (
-	defaultHost      = "localhost"
-	defaultPort      = 8585
-	defaultTableName = "gharchive"
-	defaultOverwrite = false
-	defaultVerbose   = false
-)
-
-const (
-	hostUsage      = "the host the Sky server is running on"
-	portUsage      = "the port the Sky server is running on"
-	tableNameUsage = "the table to insert events into"
-	overwriteUsage = "overwrite an existing table if one exists"
-	verboseUsage   = "verbose logging"
-)
-
-//------------------------------------------------------------------------------
-//
-// Variables
-//
-//------------------------------------------------------------------------------
 
 var host string
 var port uint
@@ -54,47 +26,13 @@ var tableName string
 var overwrite bool
 var verbose bool
 
-
-//------------------------------------------------------------------------------
-//
-// Typedefs
-//
-//------------------------------------------------------------------------------
-
-// Temporary holder for event data.
-type UserEvent struct {
-	username string
-	event *sky.Event
-}
-
-type UserEventSlice []*UserEvent
-
-
-//------------------------------------------------------------------------------
-//
-// Functions
-//
-//------------------------------------------------------------------------------
-
-//--------------------------------------
-// Initialization
-//--------------------------------------
-
 func init() {
-	flag.StringVar(&host, "host", defaultHost, hostUsage)
-	flag.StringVar(&host, "h", defaultHost, hostUsage+" (shorthand)")
-	flag.UintVar(&port, "port", defaultPort, portUsage)
-	flag.UintVar(&port, "p", defaultPort, portUsage+" (shorthand)")
-	flag.StringVar(&tableName, "table", defaultTableName, tableNameUsage)
-	flag.StringVar(&tableName, "t", defaultTableName, tableNameUsage+" (shorthand)")
-	flag.BoolVar(&overwrite, "overwrite", defaultOverwrite, overwriteUsage)
-	flag.BoolVar(&verbose, "v", defaultVerbose, verboseUsage)
-	flag.BoolVar(&verbose, "verbose", defaultVerbose, verboseUsage)
+	flag.StringVar(&host, "h", "localhost", "the host the Sky server is running on")
+	flag.UintVar(&port, "p", 8585, "the port the Sky server is running on")
+	flag.StringVar(&tableName, "t", "gharchive", "the table to insert events into")
+	flag.BoolVar(&overwrite, "overwrite", false, "overwrite an existing table if one exists")
+	flag.BoolVar(&verbose, "v", false, "enable verbose logging")
 }
-
-//--------------------------------------
-// Main
-//--------------------------------------
 
 func main() {
 	var err error
@@ -131,11 +69,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Send events on a separate stream.
+	c := make(chan UserEvents, 5)
+	go stream(table, c)
+
 	// Loop over date range.
 	hours := int(endDate.Sub(startDate)/time.Hour) + 1
 	for i := 0; i < hours; i++ {
 		date := startDate.Add(time.Duration(i) * time.Hour)
-		if err = importDate(table, date); err != nil {
+		if err = getRawData(date, c); err != nil {
 			warn("Invalid file: %v", err)
 		}
 	}
@@ -146,16 +88,12 @@ func usage() {
 	os.Exit(1)
 }
 
-//--------------------------------------
-// Setup
-//--------------------------------------
-
-func setup() (*sky.Client, *sky.Table, error) {
+func setup() (sky.Client, sky.Table, error) {
 	warn("Connecting to %s:%d.\n", host, port)
 
 	// Create a Sky client.
 	client := sky.NewClient(host)
-	client.Port = port
+	client.SetPort(port)
 
 	// Check if the server is running.
 	if !client.Ping() {
@@ -201,12 +139,8 @@ func setup() (*sky.Client, *sky.Table, error) {
 	return client, table, nil
 }
 
-//--------------------------------------
-// Setup
-//--------------------------------------
-
-// Imports GitHub Archive data for a given hour.
-func importDate(table *sky.Table, date time.Time) error {
+// getRawData retrieves the events for a given hour and sends them to a channel.
+func getRawData(date time.Time, c chan UserEvents) error {
 	// Retrieve gziped JSON file.
 	url := fmt.Sprintf("http://data.githubarchive.org/%d-%02d-%02d-%d.json.gz", date.Year(), int(date.Month()), date.Day(), date.Hour())
 	warn("%v", url)
@@ -252,7 +186,7 @@ func importDate(table *sky.Table, date time.Time) error {
 							event.Data["size"] = repository["size"]
 						}
 
-						events = append(events, &UserEvent{username:username, event:event})
+						events = append(events, &UserEvent{username: username, event: event})
 					} else if verbose {
 						warn("[L%d] Actor required", lineNumber)
 					}
@@ -266,43 +200,47 @@ func importDate(table *sky.Table, date time.Time) error {
 	}
 
 	// Sort events by timestamp.
-	sort.Sort(UserEventSlice(events))
-	
-	// Insert events.
-	table.Stream(func(stream *sky.EventStream) {
-		for index, ue := range events {
-			if err := stream.AddEvent(ue.username, ue.event); err != nil {
-				warn("[L%d] Unable to add event", index+1)
-			}
-		}
-	})
+	sort.Sort(UserEvents(events))
+	c <- events
 
-	
 	return nil
 }
 
-//--------------------------------------
-// User Event Slice
-//--------------------------------------
+// stream reads from a channel and continuously pipes new events to Sky.
+func stream(t sky.Table, c chan UserEvents) {
+	for {
+		events := <- c
+		t.Stream(func(stream *sky.EventStream) {
+			for i, e := range events {
+				if err := stream.AddEvent(e.username, e.event); err != nil {
+					warn("[L%d] Unable to add event", i+1)
+				}
+			}
+		})
+	}
+}
 
-func (s UserEventSlice) Len() int {
+// UserEvent temporarily stores event data from the Github Archive stream.
+type UserEvent struct {
+	username string
+	event    *sky.Event
+}
+
+type UserEvents []*UserEvent
+
+func (s UserEvents) Len() int {
 	return len(s)
 }
 
-func (s UserEventSlice) Less(i, j int) bool {
+func (s UserEvents) Less(i, j int) bool {
 	return s[i].event.Timestamp.Before(s[j].event.Timestamp)
 }
 
-func (s UserEventSlice) Swap(i, j int) {
+func (s UserEvents) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
 }
-
-//--------------------------------------
-// Utility
-//--------------------------------------
 
 // Writes to standard error.
 func warn(msg string, v ...interface{}) {
 	fmt.Fprintf(os.Stderr, msg+"\n", v...)
 }
-
